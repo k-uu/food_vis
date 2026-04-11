@@ -14,11 +14,10 @@ vegaEmbed = require("vega-embed@6")
 vegaEmbed(display(), {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "A simple bar chart with embedded data.",
-  "data": { "values": data},
-  "mark": "bar",
+  "data": {"url": "data/seattle-weather.csv"},
+  "mark": "tick",
   "encoding": {
-    "y": {"field": "Year", "type": "quantitative"},
-    "tooltip": true
-  },
+    "x": {"field": "precipitation", "type": "quantitative"}
+  }
   "width": "container"
 })
