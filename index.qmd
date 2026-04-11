@@ -1,0 +1,24 @@
+---
+title: "Visualization"
+---
+
+Welcome 
+
+```{ojs}
+
+data = FileAttachment("gh_eff.json").json()
+
+// 2. Define and render the Vega-Lite specification
+vegaEmbed = require("vega-embed@6")
+
+vegaEmbed(display(), {
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "description": "A simple bar chart with embedded data.",
+  "data": { "values": data},
+  "mark": "bar",
+  "encoding": {
+    "y": {"field": "Year", "type": "quantitative"},
+    "tooltip": true
+  },
+  "width": "container"
+})

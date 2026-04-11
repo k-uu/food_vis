@@ -1,0 +1,11 @@
+project:
+  type: default
+  output-dir: docs
+
+format:
+  html:
+    toc: true           
+    number-sections: true
+    embed-resources: true
+
+
