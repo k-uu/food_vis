@@ -2,35 +2,46 @@
 title: "Visualization"
 ---
 
-## Row {height=70%}
+## Row {height=70% }
+
+### Card {.ojs-track-layout #test}
 
 ```{ojs}
-
+//| title: Test
 data = await FileAttachment("gh_eff.json").json()
 
-// 2. Define and render the Vega-Lite specification
-vegaEmbed = require("vega-embed@6")
-renderChart = {
-    const container = html`<div></div>`;
-    vegaEmbed(container, {
-    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-    "description": "A simple bar chart with embedded data.",
-    "data": {
+
+embed = require("vega-embed@7")
+
+embed({
+"$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+"description": "A simple bar chart with embedded data.",
+width: width - 100,
+height: 300,
+"autosize": "fit",
+"data": {
     "values": data
-  },
-  "mark": "bar",
-  "encoding": {
+},
+"mark": "bar",
+"encoding": {
     "y": {"field": "Year", "type": "nominal"},
     "x": {"aggregate": "average", "field": "Lettuces", "type": "quantitative"}
-    }
-    },
-    {height: 600}
-    );
-    return container
 }
+},
+{
+    actions: false
+})
 ```
 
 ## Row {height=30%}
-```{ojs}
-s = 3
+```{python}
+#| title: Iowa Electricity
+import altair as alt
+from vega_datasets import data
+source = data.iowa_electricity()
+alt.Chart(source).mark_area(opacity=0.3).encode(
+  x="year:T",
+  y=alt.Y("net_generation:Q").stack(None),
+  color="source:N"
+)
 ```
