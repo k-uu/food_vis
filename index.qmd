@@ -2,46 +2,31 @@
 title: "Visualization"
 ---
 
-## Row {height=70% }
+## Row {height=50% }
 
-### Card {.ojs-track-layout #test}
-
-```{ojs}
-//| title: Test
-data = await FileAttachment("gh_eff.json").json()
-
-
-embed = require("vega-embed@7")
-
-embed({
-"$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-"description": "A simple bar chart with embedded data.",
-width: width - 100,
-height: 300,
-"autosize": "fit",
-"data": {
-    "values": data
-},
-"mark": "bar",
-"encoding": {
-    "y": {"field": "Year", "type": "nominal"},
-    "x": {"aggregate": "average", "field": "Lettuces", "type": "quantitative"}
-}
-},
-{
-    actions: false
-})
-```
-
-## Row {height=30%}
+## Row {height=50%}
 ```{python}
-#| title: Iowa Electricity
+#| title: Title
 import altair as alt
-from vega_datasets import data
-source = data.iowa_electricity()
-alt.Chart(source).mark_area(opacity=0.3).encode(
-  x="year:T",
-  y=alt.Y("net_generation:Q").stack(None),
-  color="source:N"
+from altair.datasets import data
+
+source = data.seattle_weather()
+brush = alt.selection_interval(encodings=['x'])
+
+bars = alt.Chart().mark_bar().encode(
+    x='month(date):O',
+    y='mean(precipitation):Q',
+    opacity = alt.when(brush).then(alt.value(1)).otherwise(alt.value(0.7)),
+).add_params(
+    brush
 )
+
+line = alt.Chart().mark_rule(color='firebrick').encode(
+    y='mean(precipitation):Q',
+    size=alt.SizeValue(3)
+).transform_filter(
+    brush
+)
+
+alt.layer(bars, line, data=source)
 ```
