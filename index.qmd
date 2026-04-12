@@ -2,22 +2,35 @@
 title: "Visualization"
 ---
 
-Welcome 
+## Row {height=70%}
 
 ```{ojs}
 
-data = FileAttachment("gh_eff.json").json()
+data = await FileAttachment("gh_eff.json").json()
 
 // 2. Define and render the Vega-Lite specification
 vegaEmbed = require("vega-embed@6")
-
-vegaEmbed(display(), {
-  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "A simple bar chart with embedded data.",
-  "data": {"url": "data/seattle-weather.csv"},
-  "mark": "tick",
+renderChart = {
+    const container = html`<div></div>`;
+    vegaEmbed(container, {
+    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+    "description": "A simple bar chart with embedded data.",
+    "data": {
+    "values": data
+  },
+  "mark": "bar",
   "encoding": {
-    "x": {"field": "precipitation", "type": "quantitative"}
-  }
-  "width": "container"
-})
+    "y": {"field": "Year", "type": "nominal"},
+    "x": {"aggregate": "average", "field": "Lettuces", "type": "quantitative"}
+    }
+    },
+    {height: 600}
+    );
+    return container
+}
+```
+
+## Row {height=30%}
+```{ojs}
+s = 3
+```

@@ -3,9 +3,11 @@ project:
   output-dir: docs
 
 format:
-  html:
-    toc: true           
-    number-sections: true
-    embed-resources: true
+  dashboard
+  # html:
+  #   page-layout: full
+  #   toc: true           
+  #   number-sections: true
+  #   embed-resources: true
 
 
