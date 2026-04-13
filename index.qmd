@@ -1,32 +1,62 @@
 ---
-title: "Visualization"
+title: "Finnish Greenhouse Yields"
 ---
 
-## Row {height=50% }
-
-## Row {height=50%}
+## Row
 ```{python}
-#| title: Title
 import altair as alt
 from altair.datasets import data
+import pandas as pd
 
-source = data.seattle_weather()
-brush = alt.selection_interval(encodings=['x'])
+df = pd.read_csv("gh_yields.csv")
+df['Year'] = df['Year'].astype(str)
 
-bars = alt.Chart().mark_bar().encode(
-    x='month(date):O',
-    y='mean(precipitation):Q',
-    opacity = alt.when(brush).then(alt.value(1)).otherwise(alt.value(0.7)),
-).add_params(
-    brush
+crop = alt.selection_point(encodings=['x'], empty=False, nearest=True)
+
+pnt = alt.selection_point(encodings=['y'], empty=False, nearest=True)
+
+color = (
+    alt.when(crop)
+    .then(alt.ColorValue("steelblue"))
+    .otherwise(alt.ColorValue("grey"))
 )
 
-line = alt.Chart().mark_rule(color='firebrick').encode(
-    y='mean(precipitation):Q',
-    size=alt.SizeValue(3)
+
+base = alt.Chart(df, width=500, height=500).encode(
+    x=alt.X('Year:T', timeUnit='year', scale=alt.Scale(domain=[2014, 2025])),
+    y=alt.Y('Yield:Q').bin(maxbins=10),
+    size=alt.Size('count()').title('Crops in Selection'),
+
+).add_params(pnt)
+
+bg = base.mark_point(color='grey')
+
+line = base.mark_line(color='steelblue').transform_filter(crop)
+
+
+bar = alt.Chart(df, width='container', height=200).mark_bar().encode(
+    x=alt.X('Crop:N').sort('-y'),
+    y='sum(Area):Q',
+    color=color
+).add_params(crop)
+
+
+lines = alt.Chart(df, width=500, height=500).mark_line().encode(
+    alt.X('Year:T', timeUnit='year', scale=alt.Scale(domain=[2014, 2025])),
+    alt.Y('Yield:Q'),
+    alt.Color('Crop:N').title('Crop')
 ).transform_filter(
-    brush
+    pnt | crop
 )
 
-alt.layer(bars, line, data=source)
+alt.vconcat(
+    ((bg + line) | (lines)),
+    bar, center=True, autosize='pad'
+).resolve_legend(
+    color="independent",
+    size="independent"
+).configure_legend(
+    orient="right",
+    offset=10
+)
 ```
