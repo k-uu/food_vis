@@ -1,5 +1,5 @@
 ---
-title: "Finnish Greenhouse Yields"
+title: "Finnish Greenhouse Productivity"
 ---
 
 ## Row
@@ -7,31 +7,36 @@ title: "Finnish Greenhouse Yields"
 import altair as alt
 from altair.datasets import data
 import pandas as pd
+from scipy.cluster.hierarchy import linkage, leaves_list
 
+RED = 'rgb(228, 129, 105)'
+LRED = 'rgb(246, 189, 164)'
+BLUE = 'rgb(107, 172, 209)'
+LBLUE = 'rgb(175, 211, 230)'
+GREY = 'rgba(0, 0, 0, 0.25)'
+
+# Preprocessing
 df = pd.read_csv("gh_yields.csv")
-df['Year'] = df['Year'].astype(str)
+# df['Year'] = df['Year'].astype(str)
+df['ProdChange'] = df.groupby('Crop')['Productivity'].transform(
+    lambda x: x.ffill().pct_change() * 100) 
 
-crop = alt.selection_point(encodings=['x'], empty=False, nearest=True)
+matrix = df.pivot(index='Crop', columns='Year', values='ProdChange').fillna(0)
 
-pnt = alt.selection_point(encodings=['y'], empty=False, nearest=True)
+Z = linkage(matrix, method='ward')
+cluster_order = leaves_list(Z)
+
+sorted_crops = matrix.index[cluster_order].tolist()
+
+# Visualization
+
+crop = alt.selection_point(encodings=['x'], empty=True, nearest=True)
 
 color = (
     alt.when(crop)
     .then(alt.ColorValue("steelblue"))
     .otherwise(alt.ColorValue("grey"))
 )
-
-
-base = alt.Chart(df, width=500, height=500).encode(
-    x=alt.X('Year:T', timeUnit='year', scale=alt.Scale(domain=[2014, 2025])),
-    y=alt.Y('Yield:Q').bin(maxbins=10),
-    size=alt.Size('count()').title('Crops in Selection'),
-
-).add_params(pnt)
-
-bg = base.mark_point(color='grey')
-
-line = base.mark_line(color='steelblue').transform_filter(crop)
 
 
 bar = alt.Chart(df, width='container', height=200).mark_bar().encode(
@@ -41,22 +46,156 @@ bar = alt.Chart(df, width='container', height=200).mark_bar().encode(
 ).add_params(crop)
 
 
-lines = alt.Chart(df, width=500, height=500).mark_line().encode(
-    alt.X('Year:T', timeUnit='year', scale=alt.Scale(domain=[2014, 2025])),
-    alt.Y('Yield:Q'),
-    alt.Color('Crop:N').title('Crop')
-).transform_filter(
-    pnt | crop
+
+thresholds = [2, 10, 25]
+sizes = [3, 10, 15, 25]
+
+df['Magnitude'] = df['ProdChange'].abs()
+
+df['Year'] = df['Year'].astype(str)
+
+WIDTH = 400
+
+hm = alt.Chart(df, width=WIDTH, height=500).mark_point(shape='stroke', size=(WIDTH/11)**2, opacity=1).encode(
+    alt.X('Year:T', timeUnit='year').scale(domain=[2014, 2025]),
+    alt.Y('Crop:N').sort(sorted_crops),
+    alt.StrokeWidth('Magnitude:Q').scale(type='threshold',
+    domain=thresholds ,range=sizes, clamp=True),
+    alt.Color('ProdChange:Q').title('Percent change in productivity').scale(type='threshold',
+            domain=[-2, 2],
+             range=[RED, GREY, BLUE]),
+    xOffset=alt.value(-WIDTH / 24),
+    tooltip='ProdChange'
+
 )
 
+
 alt.vconcat(
-    ((bg + line) | (lines)),
+    hm,
     bar, center=True, autosize='pad'
-).resolve_legend(
-    color="independent",
-    size="independent"
-).configure_legend(
-    orient="right",
-    offset=10
+).resolve_scale(
+    strokeWidth='independent',
+    color='independent'
+).configure_axis(
+    grid=False
+)
+```
+
+```{python}
+
+# scatter with circles encoding area
+
+import altair as alt
+from altair.datasets import data
+import pandas as pd
+from scipy.cluster.hierarchy import linkage, leaves_list
+
+RED = 'rgb(228, 129, 105)'
+LRED = 'rgb(246, 189, 164)'
+BLUE = 'rgb(107, 172, 209)'
+LBLUE = 'rgb(175, 211, 230)'
+GREY = 'rgba(0, 0, 0, 0.25)'
+
+# Preprocessing
+df = pd.read_csv("gh_yields.csv")
+# df['Year'] = df['Year'].astype(str)
+df['ProdChange'] = df.groupby('Crop')['Productivity'].transform(
+    lambda x: x.ffill().pct_change() * 100) 
+
+def transform_index(df, variable):
+    return df.groupby('Crop')[variable].transform(
+    lambda x: x / x[~x.isna()].iloc[0] * 100) 
+
+df['AreaIndex'] = transform_index(df, 'Area')
+    
+
+df['YieldIndex'] = transform_index(df, 'Yield')
+
+df['ProdIndex'] = transform_index(df, 'Productivity')
+    
+
+
+matrix = df.pivot(index='Crop', columns='Year', values='ProdChange').fillna(0)
+
+Z = linkage(matrix, method='ward')
+cluster_order = leaves_list(Z)
+
+sorted_crops = matrix.index[cluster_order].tolist()
+
+# Visualization
+
+crop = alt.selection_point(encodings=['y'], empty=False)
+
+color = (
+    alt.when(crop)
+    .then(alt.ColorValue("steelblue"))
+    .otherwise(alt.ColorValue("grey"))
+)
+
+bar = alt.Chart(df, width='container', height=200).mark_bar().encode(
+    y=alt.X('Crop:N').sort('-x'),
+    x='sum(Area):Q',
+    color=color
+).add_params(crop)
+
+
+thresholds = [2, 10, 25]
+sizes = [3, 10, 15, 25]
+
+df['Magnitude'] = df['ProdChange'].abs()
+
+df['Year'] = df['Year'].astype(str)
+
+WIDTH = 400
+
+# TODO: in order to sort order, calculate the sort manually.
+hm = alt.Chart(df, width=WIDTH, height=500).mark_boxplot(box={'fill': 'transparent', 'stroke': 'black'}, median={'stroke': 'black'}).encode(
+    alt.X('Crop:N'),
+    alt.Y('ProdChange:Q')
+)
+
+zero_line = alt.Chart().mark_rule(color='black').encode(
+    y=alt.datum(0)
+)
+
+shade = alt.Chart(pd.DataFrame({
+    'y1': [-100],   # adjust lower bound if needed
+    'y2': [0]
+})).mark_rect(
+    color=RED,
+    opacity=0.2
+).encode(
+    y='y1:Q',
+    y2='y2:Q'
+)
+
+base = alt.Chart(df, width=WIDTH, height=300).encode(
+    alt.X('Year:T', timeUnit='year').scale(domain=[2014, 2025]),
+).transform_filter(
+    crop
+)
+
+area = base.mark_circle(color='BLUE').encode(alt.Y('AreaIndex:Q'))
+
+yld = base.mark_circle(color='RED').encode(alt.Y('YieldIndex:Q'))
+
+prd = base.mark_line(color='GREY').encode(alt.Y('ProdIndex:Q'))
+
+rule = base.mark_rule(strokeWidth=1).encode(
+    alt.Y('YieldIndex:Q'),
+    alt.Y2('AreaIndex:Q')
+)
+
+
+
+alt.vconcat(
+    ((hm + shade) | bar),
+     rule + yld + area + prd, center=False, autosize='pad'
+).resolve_scale(
+    strokeWidth='independent',
+    color='independent',
+    size='independent'
+).configure_axis(
+    grid=False
 )
 ```
