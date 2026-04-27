@@ -3,6 +3,7 @@ project:
   output-dir: docs
 
 format:
-  dashboard
+  dashboard:
+    scrolling: true 
 
 

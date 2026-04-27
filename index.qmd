@@ -1,8 +1,8 @@
 ---
-title: "Finnish Greenhouse Productivity"
+title: "Visualizing Finnish Greenhouse Productivity"
 ---
 
-## Row
+### Row
 ```{python}
 import pandas as pd
 import altair as alt
@@ -71,12 +71,6 @@ indices = indices.merge(stats_df[['Crop', 'pct_std']], on='Crop')
 # get the list of crops to maintain consistent colors
 crops = stats_df['Crop'].unique().tolist()
 
-```
-
-```{python}
-#| fig-height: 12
-#| out-height: "100%"
-
 # Visualization
 
 # For selecting crop from scatter plot
@@ -84,10 +78,10 @@ selection = alt.selection_point(fields=['Crop'], on='click', toggle=True, value=
 
 base = alt.Chart(stats_df).encode(
     x=alt.X('growth_rate:Q', 
-            title='Estimated Growth in Productivity (%)',
+            title='Growth in Productivity (%)',
             scale=alt.Scale(zero=False)),
     y=alt.Y('pct_std:Q', 
-            title='Variability (Standard Deviation of % Change in Productivity)',
+            title='Variability in Productivity',
             scale=alt.Scale(zero=False)),
     tooltip=[
         alt.Tooltip('Crop:N'),
@@ -102,7 +96,7 @@ points = base.mark_circle(stroke='black').add_params(
     selection
 ).encode(
     size=alt.Size('sum_area:Q'). 
-                  title('Cumulative Cultivation Area (m^2)').scale(range=[100, 2000]).legend(orient='bottom'),
+                  title('Cumulative Cultivation Area (m^2)').scale(range=[100, 2000]).legend(orient='bottom', titleLimit=200),
     color=alt.Color('Crop:N', legend=None).scale(domain=crops, scheme='tableau20'),
     strokeWidth=alt.when(selection).then(alt.StrokeWidthValue(1.5)).otherwise(alt.StrokeWidthValue(0))
 )
@@ -147,19 +141,18 @@ line_chart = lines # + baseline
 
 details_chart = line_chart.facet(
     facet=alt.Facet('Crop:N', title=None).sort(field='pct_std', op='max', order='ascending'),
-    columns=1,
+    columns=2,
     
 ).properties(
     title={
-        "text": "Index Charts for Selected Crops",
-        "subtitle": ["Uses variable baseline."]
+        "text": "Index Charts for Selected Crops**",
+        "subtitle": ["How have the crop measurements changed relative to a baseline."]
     }
 )
-
 main = (points + labels).properties(
     title={
-        "text": "Crop Productivity Growth vs. Variability",
-        "subtitle": ["Click on crop to explore. Hold the Shift key while clicking to select multiple crops."]
+        "text": "Crop Productivity Growth vs. Variability*",
+        "subtitle": ["Click on a crop to explore. Hold the Shift key while clicking to select multiple crops."]
     },
     width=600,
     height=400)
@@ -171,6 +164,25 @@ alt.hconcat(main, details_chart).configure_view(stroke=None).resolve_scale(
 ).resolve_legend(
     color='independent',
     size='independent'
+).configure(
+    autosize=alt.AutoSizeParams(resize=True)
+).configure_title(
+    anchor='middle',
+    fontSize=20,
+    offset=30,
+    subtitlePadding=20
 )
 
 ```
+
+## Row {height=250}
+::: {.card}
+*For each crop:
+
+- **Productivity** is defined as the yield (kg) divided by the cultivation area ($m^2$) 
+- **Variability** is calculated as the standard deviation of the yearly fractional change in productivity.
+- **Growth** is estimated using the fitted slope from a log-linear regression model. For example, a growth rate of 5% would lead to a $(1.05)^{10} = 1.63$ times increase in productivity over 10 years.
+
+**baseline year varies across crops due to missing values.
+
+:::
