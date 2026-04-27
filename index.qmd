@@ -4,20 +4,14 @@ title: "Finnish Greenhouse Productivity"
 
 ## Row
 ```{python}
-
-# scatter with circles encoding area
-
-import altair as alt
-from altair.datasets import data
 import pandas as pd
-from scipy.cluster.hierarchy import linkage, leaves_list
+import altair as alt
+import numpy as np
 
+# Data Preprocessing
 
-# Preprocessing
 df = pd.read_csv("gh_yields.csv")
-# df['Year'] = df['Year'].astype(str)
-df['ProdChange'] = df.groupby('Crop')['Productivity'].transform(
-    lambda x: x.ffill().pct_change() * 100) 
+df['Year'] = df['Year'].astype(str)
 
 def get_common_base_year(df, variables):
     return (
@@ -42,189 +36,141 @@ def transform_index(df, variables):
     
     return pd.DataFrame(indices)
 
-df['Year'] = df['Year'].astype(str)
-
 indices = transform_index(df, ['Area', 'Yield', 'Productivity'])
 
-def transform_index(df, variable):
-    return df.groupby('Crop')[variable].transform(
-    lambda x: x / x[~x.isna()].iloc[0] * 100) 
 
+from scipy.stats import linregress
 
+# 1. Calculate statistics
+def get_stats(group):
 
-df['AreaIndex'] = transform_index(df, 'Area')
+    pct_std = group['Productivity'].pct_change(fill_method
+=None).std()
+
+    clean_data = group['Productivity'].dropna()
+    if len(clean_data) > 2:
+        log_y = np.log(clean_data)
+        x = np.arange(len(log_y)) # The time delta is 1 year
+        slope = linregress(x, log_y).slope
+        # convert the slope to percent change in Y. 
+        slope = (np.exp(slope) - 1) * 100
+    else:
+        slope = np.nan
     
+    return pd.Series({
+        'sum_area': group['Area'].sum(),
+        'pct_std': pct_std,
+        'growth_rate': slope
+    })
 
-df['YieldIndex'] = transform_index(df, 'Yield')
+stats_df = df.groupby('Crop').apply(get_stats).reset_index()
 
-df['ProdIndex'] = transform_index(df, 'Productivity')
+# merge for sorting of facets
+indices = indices.merge(stats_df[['Crop', 'pct_std']], on='Crop')
 
-by_area = df.groupby('Crop')['Area'].sum().sort_values(ascending=False).index.to_list()
-
-by_median = df.groupby('Crop')['ProdChange'].median().sort_values(ascending=False).index.to_list()
+# get the list of crops to maintain consistent colors
+crops = stats_df['Crop'].unique().tolist()
 
 ```
+
 ```{python}
+#| fig-height: 12
+#| out-height: "100%"
 
 # Visualization
 
-WIDTH = 400
-RED = 'rgb(228, 129, 105)'
+# For selecting crop from scatter plot
+selection = alt.selection_point(fields=['Crop'], on='click', toggle=True, value='Tomatoes', empty=False)
 
-crop = alt.selection_point(encodings=['y'], empty=False)
-
-
-
-sort_labels = ['Cumulative Area', 'Median % Change in Efficiency']
-
-sort_values = ['area', 'median']
-
-import numpy as np
-
-order_df = pd.DataFrame({
-    'Crop': np.concat([by_area, by_median]),
-    'sort_mode': np.repeat(sort_values, len(by_area)),
-    'rank': np.tile(np.arange(len(by_area)), 2)
-})
-
-
-dropdown = alt.binding_select(options=sort_values, labels=sort_labels, name='Sort Crops By:')
-
-sort_param = alt.param(
-    name="sort_mode",
-    bind=dropdown
+base = alt.Chart(stats_df).encode(
+    x=alt.X('growth_rate:Q', 
+            title='Estimated Growth in Productivity (%)',
+            scale=alt.Scale(zero=False)),
+    y=alt.Y('pct_std:Q', 
+            title='Variability (Standard Deviation of % Change in Productivity)',
+            scale=alt.Scale(zero=False)),
+    tooltip=[
+        alt.Tooltip('Crop:N'),
+        alt.Tooltip('growth_rate:Q', format='.2f', title='Growth Rate'),
+        alt.Tooltip('pct_std:Q', format='.3f', title='Variability'),
+        alt.Tooltip('sum_area:Q', format=',.0f', title='Cumulative Cultivation Area')
+    ]
 )
 
-color = (
-    alt.when(crop)
-    .then(alt.ColorValue("steelblue"))
-    .otherwise(alt.ColorValue("grey"))
-)
-
-base = alt.Chart(df, height=500,
-width=WIDTH)
-
-bar = base.mark_bar().encode(
-    y=alt.X('Crop:N').sort('-x').axis(None),
-    x=alt.X('sum(Area):Q').title("Cumulative Cultivation Area (Square Meters)"),
-    color=color
-).add_params(crop)
-
-
-# Crop names
-middle = base.encode(
-    alt.Y('Crop:N').axis(None).sort(by_area),
-    alt.Text('Crop:N'),
-    alt.Color('Crop:N').scale(scheme='tableau20')
-).mark_text().properties(width=100).add_params(crop)
-
-# TODO: in order to sort order, calculate the sort manually.
-boxplots = base.mark_boxplot(extent=0,
-    box={'fill': 'transparent', 'stroke': 'black'}, 
-    median={'stroke': 'black'},
-    outliers={'stroke': 'grey'}).encode(
-    alt.Y('Crop:N').sort(by_area).axis(None),
-    alt.X('ProdChange:Q').scale(reverse=True).title("% Change in Productivity")
-)
-
-
-# funky beeswarm function
-offsets = []
-for cat, g in df.groupby("Crop"):
-    ys = []
-
-    for _, row in g.iterrows():
-        y = row["ProdChange"]
-
-        # count nearby points
-        nearby = sum(abs(y - yy) < 5 for yy in ys)
-
-        if nearby == 0:
-            offset = 0
-        else:
-            k = (nearby + 1) // 2
-            offset = k if nearby % 2 else -k
-
-        offsets.append(offset * 3)
-        ys.append(y)
-
-df["offset"] = offsets
-
-boxplots = base.mark_circle(opacity=1).encode(
-    alt.X('ProdChange:Q').scale(reverse=True).title("% Change in Productivity"),
-    alt.Y('Crop:N').sort(by_area).axis(None),
-    yOffset='offset:Q',
-    color=alt.Color('Crop:N').scale(scheme='tableau20').legend(None),
-)
-
-shade = alt.Chart(pd.DataFrame({
-    'bot': [-100],
-    'top': [0]
-})).mark_rect(
-    color='grey',
-    opacity=0.2
+# The Scatter Points
+points = base.mark_circle(stroke='black').add_params(
+    selection
 ).encode(
-    x='top:Q',
-    x2='bot:Q'
+    size=alt.Size('sum_area:Q'). 
+                  title('Cumulative Cultivation Area (m^2)').scale(range=[100, 2000]).legend(orient='bottom'),
+    color=alt.Color('Crop:N', legend=None).scale(domain=crops, scheme='tableau20'),
+    strokeWidth=alt.when(selection).then(alt.StrokeWidthValue(1.5)).otherwise(alt.StrokeWidthValue(0))
 )
 
-medians = base.mark_point(color='black', shape='stroke', size=300, angle=90, opacity=0.6).encode(
-    alt.Y('Crop:N').sort(by_area).axis(None),
-    alt.X('median(ProdChange):Q')
-)
+# Interactive Labels
+labels = base.mark_text(
+    align='left',
+    baseline='middle',
+    dx=12,
+    fontSize=12
+).encode(
+    text='Crop:N',
+).transform_filter(selection)
 
-base = alt.Chart(indices, width=WIDTH, height=300).transform_fold(
+# Facet line charts
+base = alt.Chart(indices).transform_fold(
     ['Area', 'Yield', 'Productivity'],
     as_=['key', 'Index Value']
 ).encode(
-    alt.X('Year:T', timeUnit='year').scale(domain=[2014, 2025]),
-    alt.Y('Index Value:Q').title('Index Value'),
+    alt.X('Year:T', timeUnit='year').scale(domain=[2014, 2025]).axis(grid=True),
+    alt.Y('Index Value:Q').title('Index Value').axis(grid=False),
     color=alt.Color('key:N').legend(title=" ")
-    ).transform_filter(
-    crop
+).transform_filter(
+    selection
+).properties(
+    width=180,
+    height=150
 )
-
-opacity = 1
-
-points = base.mark_circle(opacity=opacity)
     
-lines = base.mark_line(opacity=opacity).encode(
+lines = base.mark_line(opacity=1, point=True).encode(
     strokeWidth=alt.when('datum.key == "Productivity"').then(alt.StrokeWidthValue(3)).otherwise(alt.StrokeWidthValue(2))
 )
 
-baseline = alt.Chart().mark_rule(color='black', strokeDash=[1,1]).encode(
-    y=alt.datum(100)
-)
-
-area = alt.Chart(indices, width=WIDTH, height=300).mark_area(opacity=0.2).encode(
-    alt.X('Year:T', timeUnit='year').scale(domain=[2014, 2025]).title('Year'),
-    y=alt.Y("Area:Q"),
-    y2="Yield:Q",
-    color = alt.ColorValue("grey")
-).transform_filter(
-    crop
-)
-
-
-
-
-
-
-
-alt.vconcat(
-    alt.concat((boxplots + shade), middle, bar, spacing=5),
-     baseline + points + lines + area, center=False, autosize='pad'
-).configure_axis(
-    grid=False
-).resolve_legend(
-    color='independent'
-).resolve_scale(
-    color='independent'
-)
-
-# .resolve_scale(
-#     strokeWidth='independent',
-#     color='independent',
-#     size='independent'
+# TODO:
+# baseline = base.transform_calculate(
+#     baseline='100'
+# ).mark_line(color='black', strokeDash=[1,1]).encode(
+#     y='baseline:Q'
 # )
+
+line_chart = lines # + baseline
+
+details_chart = line_chart.facet(
+    facet=alt.Facet('Crop:N', title=None).sort(field='pct_std', op='max', order='ascending'),
+    columns=1,
+    
+).properties(
+    title={
+        "text": "Index Charts for Selected Crops",
+        "subtitle": ["Uses variable baseline."]
+    }
+)
+
+main = (points + labels).properties(
+    title={
+        "text": "Crop Productivity Growth vs. Variability",
+        "subtitle": ["Click on crop to explore. Hold the Shift key while clicking to select multiple crops."]
+    },
+    width=600,
+    height=400)
+
+# Layer and Configure
+alt.hconcat(main, details_chart).configure_view(stroke=None).resolve_scale(
+     strokeWidth='independent',
+     color='independent',
+).resolve_legend(
+    color='independent',
+    size='independent'
+)
+
 ```
