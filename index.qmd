@@ -116,9 +116,10 @@ base = alt.Chart(indices).transform_fold(
     ['Area', 'Yield', 'Productivity'],
     as_=['key', 'Index Value']
 ).encode(
-    alt.X('Year:T', timeUnit='year').scale(domain=[2014, 2025]).axis(grid=True),
+    alt.X('Year:T', timeUnit='year').scale(domain=[2014, 2025]).axis(grid=True).title('Year'),
     alt.Y('Index Value:Q').title('Index Value').axis(grid=False),
-    color=alt.Color('key:N').legend(title=" ")
+    color=alt.Color('key:N').legend(title=" ",
+    labelExpr='if(datum.value == "Area", "Cultivation Area", datum.value)')
 ).transform_filter(
     selection
 ).properties(
@@ -180,8 +181,8 @@ alt.hconcat(main, details_chart).configure_view(stroke=None).resolve_scale(
 *For each crop:
 
 - **Productivity** is defined as the yield (kg) divided by the cultivation area ($m^2$) 
-- **Variability** is calculated as the standard deviation of the yearly fractional change in productivity.
-- **Growth** is estimated using the fitted slope from a log-linear regression model. For example, a growth rate of 5% would lead to a $(1.05)^{10} = 1.63$ times increase in productivity over 10 years.
+    - **Variability** is calculated as the standard deviation of the yearly fractional change in productivity.
+    - **Growth** is estimated using the fitted slope from a log-linear regression model. For example, a growth rate of 5% would lead to a $(1.05)^{10} = 1.63$ times increase in productivity over 10 years.
 
 **baseline year varies across crops due to missing values.
 
