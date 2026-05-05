@@ -107,20 +107,21 @@ measure = alt.selection_point(fields=['variable'],value='Productivity', bind=inp
 base = alt.Chart(stats_df).encode(
     x=alt.X('growth_rate:Q', 
             title='Growth Rate (%)',
-            scale=alt.Scale(zero=False)),
+            scale=alt.Scale(zero=False, padding=10)).axis(grid=False),
     y=alt.Y('pct_std:Q', 
             title='Variability',
-            scale=alt.Scale(zero=False, padding=20)),
+            scale=alt.Scale(zero=False, padding=50)).axis(grid=False),
     tooltip=[
         alt.Tooltip('Crop:N'),
         alt.Tooltip('growth_rate:Q', format='.2f', title='Growth Rate'),
         alt.Tooltip('pct_std:Q', format='.3f', title='Variability'),
         alt.Tooltip('sum_area:Q', format=',.0f', title='Cumulative Cultivation Area')
     ]
-).add_params(measure).transform_filter(measure)
+).transform_filter(measure)
+
 
 # The Scatter Points
-points = base.mark_circle(stroke='black').add_params(
+points = base.mark_circle(stroke='black', opacity=0.9).add_params(
     selection
 ).encode(
     size=alt.Size('adj_area:Q'). 
@@ -128,9 +129,13 @@ points = base.mark_circle(stroke='black').add_params(
     color=alt.Color('Crop:N', legend=None).scale(domain=crops, scheme='tableau20'),
     strokeWidth=alt.when(selection).then(alt.StrokeWidthValue(1.5)).otherwise(alt.StrokeWidthValue(0)),
     order=alt.Order('sum_area:Q', sort='descending')
-).transform_calculate(
+).add_params(measure).transform_calculate(
     adj_area = alt.expr.pow(alt.datum.sum_area, 1.1432)
 ) # Flannery scaling
+
+zero = alt.Chart().mark_rule(color='lightGrey').encode(
+    x=alt.datum(0)
+)
 
 # Interactive Labels
 labels = base.mark_text(
@@ -147,7 +152,7 @@ labels = base.mark_text(
 # Facet line charts
 base = alt.Chart(indices).transform_fold(
     ['Area', 'Yield', 'Productivity'],
-    as_=['key', 'Index Value']
+    as_=['variable', 'Index Value']
 ).encode(
     alt.X('Year:T', timeUnit='year').axis(grid=True, tickCount=6, labelAngle=45).title('Year').scale(domain=[2014,2025]),
 ).properties(
@@ -155,10 +160,11 @@ base = alt.Chart(indices).transform_fold(
     height=150
 )
    
-lines = base.mark_line(opacity=1, point=True).encode(
+lines = base.mark_line(point=True).encode(
     alt.Y('Index Value:Q').title('Index Value').axis(grid=False),
-    strokeWidth=alt.when('datum.key == "Productivity"').then(alt.StrokeWidthValue(3)).otherwise(alt.StrokeWidthValue(2)),
-    color=alt.Color('key:N').legend(title=" ",
+    strokeWidth=alt.when(measure).then(alt.StrokeWidthValue(3)).otherwise(alt.StrokeWidthValue(2)),
+    opacity=alt.when(measure).then(alt.OpacityValue(1)).otherwise(alt.OpacityValue(0.5)),
+    color=alt.Color('variable:N').legend(title=" ",
     labelExpr='if(datum.value == "Area", "Cultivation Area", datum.value)')
 )
 
@@ -196,9 +202,9 @@ details_chart = line_chart.facet(
 )
 
 
-main = (points + labels).properties(
+main = (zero + points + labels).properties(
     title=alt.Title(text=alt.expr(f'"Crop " + {measure.name}.variable + ": Growth Rate vs. Variability*"'),
-    subtitle=["Click on a crop to explore. Hold the Shift key while clicking to select/deselect multiple crops.",
+    subtitle=["Click on a circle to explore. Hold the Shift key while clicking to select/deselect multiple crops.",
         "Circle area encodes cumulative cultivation area."]),
     width=600,
     height=400)
@@ -216,7 +222,7 @@ alt.hconcat(main, details_chart).configure_view(stroke=None).resolve_scale(
     anchor='middle',
     fontSize=20,
     offset=30,
-    subtitlePadding=20
+    subtitlePadding=20,
 )
 
 ```
