@@ -1,17 +1,27 @@
 ---
-title: "Visualizing Finnish Greenhouse Productivity"
+title: "Visualizing Greenhouse Farming in Finland"
 ---
 
-### Row
+## {.toolbar}
+<div id="slider-target"></div>
+
+## Row
 ```{python}
 import pandas as pd
 import altair as alt
 import numpy as np
+from scipy.stats import linregress
 
 # Data Preprocessing
 
 df = pd.read_csv("gh_yields.csv")
+
 df['Year'] = df['Year'].astype(str)
+
+# shaded areas for missing values
+df['missing'] = df.isna().any(axis=1)
+df['missing'] = df['missing'] | df.groupby('Crop')['missing'].shift(periods=-1, fill_value=False)
+
 
 def get_common_base_year(df, variables):
     return (
@@ -23,7 +33,7 @@ def get_common_base_year(df, variables):
 def transform_index(df, variables):
     base_year = get_common_base_year(df, variables)
     
-    indices = {'Year': df['Year'], 'Crop': df['Crop']}
+    indices = {'Year': df['Year'], 'Crop': df['Crop'], 'missing': df['missing']}
     
     for v in variables:
         base_values = (
@@ -36,125 +46,160 @@ def transform_index(df, variables):
     
     return pd.DataFrame(indices)
 
-indices = transform_index(df, ['Area', 'Yield', 'Productivity'])
+def calc_var(series):
+    return series.pct_change(fill_method=None).std()
 
+def calc_growth(series):
 
-from scipy.stats import linregress
-
-# 1. Calculate statistics
-def get_stats(group):
-
-    pct_std = group['Productivity'].pct_change(fill_method
-=None).std()
-
-    clean_data = group['Productivity'].dropna()
+    clean_data = series.dropna()
     if len(clean_data) > 2:
         log_y = np.log(clean_data)
         x = np.arange(len(log_y)) # The time delta is 1 year
         slope = linregress(x, log_y).slope
         # convert the slope to percent change in Y. 
-        slope = (np.exp(slope) - 1) * 100
+        return (np.exp(slope) - 1) * 100
     else:
-        slope = np.nan
+        return np.nan
+
+
+# 1. Calculate statistics
+def get_stats(group):
+
+    pct_std = calc_var(group)
+
+    growth = calc_growth(group)
     
     return pd.Series({
-        'sum_area': group['Area'].sum(),
         'pct_std': pct_std,
-        'growth_rate': slope
+        'growth_rate': growth
     })
 
-stats_df = df.groupby('Crop').apply(get_stats).reset_index()
+
+areas = df.groupby('Crop')['Area'].sum().rename('sum_area')
+
+indices = transform_index(df, ['Area', 'Yield', 'Productivity'])
+
+
+stats_df = df.melt(id_vars=['Crop'], value_vars=['Productivity','Yield','Area'])
+
+stats_df = stats_df.groupby(['Crop', 'variable']).apply(lambda x: get_stats(x['value']), include_groups=False).reset_index()
+
+stats_df = stats_df.merge(areas, on='Crop')
 
 # merge for sorting of facets
-indices = indices.merge(stats_df[['Crop', 'pct_std']], on='Crop')
+indices = indices.merge(areas, on='Crop')
 
 # get the list of crops to maintain consistent colors
 crops = stats_df['Crop'].unique().tolist()
 
-# Visualization
+## Visualization
 
 # For selecting crop from scatter plot
 selection = alt.selection_point(fields=['Crop'], on='click', toggle=True, value='Tomatoes', empty=False)
 
+options = ['Productivity', 'Area', 'Yield']
+labels = ['Productivity ', 'Cultivation Area ', 'Yield ']
+
+input_dropdown = alt.binding_select(options=options, labels=labels, name='Selected Measurement: ',     element='#slider-target')
+
+measure = alt.selection_point(fields=['variable'],value='Productivity', bind=input_dropdown)
+
 base = alt.Chart(stats_df).encode(
     x=alt.X('growth_rate:Q', 
-            title='Growth in Productivity (%)',
+            title='Growth Rate (%)',
             scale=alt.Scale(zero=False)),
     y=alt.Y('pct_std:Q', 
-            title='Variability in Productivity',
-            scale=alt.Scale(zero=False)),
+            title='Variability',
+            scale=alt.Scale(zero=False, padding=20)),
     tooltip=[
         alt.Tooltip('Crop:N'),
         alt.Tooltip('growth_rate:Q', format='.2f', title='Growth Rate'),
         alt.Tooltip('pct_std:Q', format='.3f', title='Variability'),
         alt.Tooltip('sum_area:Q', format=',.0f', title='Cumulative Cultivation Area')
     ]
-)
+).add_params(measure).transform_filter(measure)
 
 # The Scatter Points
 points = base.mark_circle(stroke='black').add_params(
     selection
 ).encode(
-    size=alt.Size('sum_area:Q'). 
-                  title('Cumulative Cultivation Area (m^2)').scale(range=[100, 2000]).legend(orient='bottom', titleLimit=200),
+    size=alt.Size('adj_area:Q'). 
+                  title('Cumulative Cultivation Area (m^2)').legend(None).scale(range=[0, 7000], zero=True),
     color=alt.Color('Crop:N', legend=None).scale(domain=crops, scheme='tableau20'),
-    strokeWidth=alt.when(selection).then(alt.StrokeWidthValue(1.5)).otherwise(alt.StrokeWidthValue(0))
-)
+    strokeWidth=alt.when(selection).then(alt.StrokeWidthValue(1.5)).otherwise(alt.StrokeWidthValue(0)),
+    order=alt.Order('sum_area:Q', sort='descending')
+).transform_calculate(
+    adj_area = alt.expr.pow(alt.datum.sum_area, 1.1432)
+) # Flannery scaling
 
 # Interactive Labels
 labels = base.mark_text(
     align='left',
     baseline='middle',
-    dx=12,
-    fontSize=12
+    fontSize=12,
+    dx = alt.expr(alt.datum.dis)
 ).encode(
     text='Crop:N',
-).transform_filter(selection)
+).transform_filter(selection).transform_calculate(
+    dis = alt.expr.max(alt.expr.sqrt(alt.datum.sum_area) / 2.1, 5)
+)
 
 # Facet line charts
 base = alt.Chart(indices).transform_fold(
     ['Area', 'Yield', 'Productivity'],
     as_=['key', 'Index Value']
 ).encode(
-    alt.X('Year:T', timeUnit='year').scale(domain=[2014, 2025]).axis(grid=True).title('Year'),
-    alt.Y('Index Value:Q').title('Index Value').axis(grid=False),
-    color=alt.Color('key:N').legend(title=" ",
-    labelExpr='if(datum.value == "Area", "Cultivation Area", datum.value)')
-).transform_filter(
-    selection
+    alt.X('Year:T', timeUnit='year').axis(grid=True, tickCount=6, labelAngle=45).title('Year').scale(domain=[2014,2025]),
 ).properties(
     width=180,
     height=150
 )
-    
+   
 lines = base.mark_line(opacity=1, point=True).encode(
-    strokeWidth=alt.when('datum.key == "Productivity"').then(alt.StrokeWidthValue(3)).otherwise(alt.StrokeWidthValue(2))
+    alt.Y('Index Value:Q').title('Index Value').axis(grid=False),
+    strokeWidth=alt.when('datum.key == "Productivity"').then(alt.StrokeWidthValue(3)).otherwise(alt.StrokeWidthValue(2)),
+    color=alt.Color('key:N').legend(title=" ",
+    labelExpr='if(datum.value == "Area", "Cultivation Area", datum.value)')
 )
 
-# TODO:
-# baseline = base.transform_calculate(
-#     baseline='100'
-# ).mark_line(color='black', strokeDash=[1,1]).encode(
-#     y='baseline:Q'
-# )
+baseline = base.transform_calculate(
+    baseline='100'
+).mark_line(color='lightGray', strokeWidth=1).encode(
+    y='baseline:Q'
+)
 
-line_chart = lines # + baseline
+rect = base.mark_rect(opacity=0.1, color='grey').transform_calculate(
+    start = "datum.Year",
+    end = "timeOffset('year', datum.Year, 1)"
+).encode(
+    x="start:T",
+    x2="end:T"
+).transform_filter(
+    alt.datum.missing==True
+)
+
+
+line_chart = rect + baseline + lines
 
 details_chart = line_chart.facet(
-    facet=alt.Facet('Crop:N', title=None).sort(field='pct_std', op='max', order='ascending'),
+    facet=alt.Facet('Crop:N', title=None).sort(field='sum_area', op='max', order='descending'),
     columns=2,
     
 ).properties(
     title={
-        "text": "Index Charts for Selected Crops**",
-        "subtitle": ["How have the crop measurements changed relative to a baseline."]
+        "text": "Index Charts for Selected Crops",
+        "subtitle": ["How have the crop measurements changed relative to a baseline.",
+        "Grey regions indicate periods containing missing values."]
     }
+).transform_filter(
+    selection
 )
+
+
 main = (points + labels).properties(
-    title={
-        "text": "Crop Productivity Growth vs. Variability*",
-        "subtitle": ["Click on a crop to explore. Hold the Shift key while clicking to select multiple crops."]
-    },
+    title=alt.Title(text=alt.expr(f'"Crop " + {measure.name}.variable + ": Growth Rate vs. Variability*"'),
+    subtitle=["Click on a crop to explore. Hold the Shift key while clicking to select/deselect multiple crops.",
+        "Circle area encodes cumulative cultivation area."]),
     width=600,
     height=400)
 
@@ -181,9 +226,9 @@ alt.hconcat(main, details_chart).configure_view(stroke=None).resolve_scale(
 *For each crop:
 
 - **Productivity** is defined as the yield (kg) divided by the cultivation area ($m^2$) 
-    - **Variability** is calculated as the standard deviation of the yearly fractional change in productivity.
-    - **Growth** is estimated using the fitted slope from a log-linear regression model. For example, a growth rate of 5% would lead to a $(1.05)^{10} = 1.63$ times increase in productivity over 10 years.
+- **Variability** is calculated as the standard deviation of the yearly fractional change in the measurement.
+- **Growth** is estimated using the fitted slope from a log-linear regression model. For example, a growth rate of 5% would lead to a $(1.05)^{10} = 1.63$ times increase over 10 years.
 
-**baseline year varies across crops due to missing values.
+Data is accessed from [Natural Resources Institute Finland](https://statdb.luke.fi/PxWeb/pxweb/en/LUKE/LUKE__maa__puutar/0500_puutar.px/) for the period 2014-2025.  
 
 :::
