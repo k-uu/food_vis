@@ -233,7 +233,7 @@ alt.hconcat(main, details_chart).configure_view(stroke=None).resolve_scale(
 
 - **Productivity** is defined as the yield (kg) divided by the cultivation area ($m^2$) 
 - **Variability** is calculated as the standard deviation of the yearly fractional change in the measurement.
-- **Growth** is estimated using the fitted slope from a log-linear regression model. For example, a growth rate of 5% would lead to a $(1.05)^{10} = 1.63$ times increase over 10 years.
+- **Growth Rate** is estimated using the fitted slope from a log-linear regression model. For example, a growth rate of 5% would lead to a $(1.05)^{10} = 1.63$ times increase over 10 years.
 
 Data is accessed from [Natural Resources Institute Finland](https://statdb.luke.fi/PxWeb/pxweb/en/LUKE/LUKE__maa__puutar/0500_puutar.px/) for the period 2014-2025.  
 
